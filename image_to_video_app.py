@@ -7,12 +7,17 @@ MAX_DURATION_SECONDS = 600
 DEFAULT_WIDTH = 1280
 DEFAULT_HEIGHT = 720
 DEFAULT_FPS = 30
+DEFAULT_DURATION_SECONDS = 10
 
 
 def validate_duration(duration: int) -> int:
     if duration < 1 or duration > MAX_DURATION_SECONDS:
         raise ValueError(f"duration must be between 1 and {MAX_DURATION_SECONDS} seconds")
     return duration
+
+
+def build_default_output_path(image_path: Path) -> Path:
+    return image_path.with_name(f"{image_path.stem}_video.mp4")
 
 
 def build_ffmpeg_command(
@@ -76,12 +81,18 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         )
     )
     parser.add_argument("--image", required=True, help="Path to input image")
-    parser.add_argument("--output", required=True, help="Path to output mp4 file")
+    parser.add_argument(
+        "--output",
+        required=False,
+        default=None,
+        help="Path to output mp4 file (default: <image_name>_video.mp4)",
+    )
     parser.add_argument(
         "--duration",
-        required=True,
+        required=False,
         type=int,
-        help="Video duration in seconds (1-600)",
+        default=DEFAULT_DURATION_SECONDS,
+        help=f"Video duration in seconds (1-600, default: {DEFAULT_DURATION_SECONDS})",
     )
     return parser.parse_args(argv)
 
@@ -89,13 +100,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
 
+    image_path = Path(args.image)
+    output_path = Path(args.output) if args.output else build_default_output_path(image_path)
+
     try:
-        generate_video(Path(args.image), Path(args.output), int(args.duration))
+        generate_video(image_path, output_path, int(args.duration))
     except Exception as exc:  # noqa: BLE001
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    print(f"Created: {args.output}")
+    print(f"Created: {output_path}")
     return 0
 
 
