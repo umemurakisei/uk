@@ -48,3 +48,13 @@ dist\image_to_video.exe --image input.jpg --output output.mp4 --duration 300
 ## 注意
 - 本ツールはローカルの `ffmpeg` を呼び出します。
 - 600秒超はエラーになります。
+
+
+## API拡張（自動編集ワークフロー）
+バックエンド API (`/uploads` → `/jobs`) では、`edit_instruction` を `POST /jobs` に渡すと、
+指示文から編集プランを自動生成するようになりました。
+
+- エフェクト / トランジション / 画面切り替え / テロップ / BGM などを含む
+  **常時 2000 種類の編集機能カタログ**を内部保持
+- アップロード画像と指示文を受けて、解析 → シーン分割 → セグメント生成 → 連結までを自動実行
+- `duration_seconds` は従来どおり `1〜600` 秒
