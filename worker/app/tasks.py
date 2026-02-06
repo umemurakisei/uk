@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import boto3
 from botocore.client import Config
@@ -14,6 +16,7 @@ from common.config import (
     REDIS_URL,
 )
 from common.job_store import update_job
+from worker.pipeline import generate_video_from_image
 
 redis_client = Redis.from_url(REDIS_URL)
 
@@ -43,11 +46,23 @@ def generate_video(
         time.sleep(1)
         update_job(redis_client, job_id, progress=70)
 
-        result_bytes = (
-            b"FAKE_MP4\n"
-            + f"duration={duration_seconds}\nstyle={style}\nbgm_enabled={bgm_enabled}\n".encode()
-            + source
-        )
+        with TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            image_path = temp_path / "source_image.jpg"
+            image_path.write_bytes(source)
+            output_path = temp_path / "result.mp4"
+
+            generate_video_from_image(
+                {
+                    "duration_sec": duration_seconds,
+                    "style": style,
+                    "bgm_enabled": bgm_enabled,
+                    "image_path": str(image_path),
+                    "output_path": str(output_path),
+                }
+            )
+            result_bytes = output_path.read_bytes()
+
         result_key = f"results/{job_id}.mp4"
         s3_client.put_object(Bucket=MINIO_BUCKET, Key=result_key, Body=result_bytes, ContentType="video/mp4")
 
