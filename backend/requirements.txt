@@ -1,0 +1,6 @@
+fastapi==0.115.8
+uvicorn[standard]==0.34.0
+redis==5.2.1
+rq==1.16.2
+boto3==1.36.25
+python-multipart==0.0.20
