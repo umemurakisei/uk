@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import imageio_ffmpeg
+
 MAX_DURATION_SECONDS = 600
 DEFAULT_WIDTH = 1280
 DEFAULT_HEIGHT = 720
@@ -34,7 +36,7 @@ def build_ffmpeg_command(
     )
 
     return [
-        "ffmpeg",
+        imageio_ffmpeg.get_ffmpeg_exe(),
         "-y",
         "-loop",
         "1",

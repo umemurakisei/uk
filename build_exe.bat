@@ -7,7 +7,7 @@ REM   build_exe.bat
 
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-python -m PyInstaller --onefile --name image_to_video image_to_video_app.py
+python -m PyInstaller --onefile --name image_to_video --collect-all imageio_ffmpeg image_to_video_app.py
 
 echo.
 echo Build complete. Executable path:

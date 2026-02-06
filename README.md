@@ -6,10 +6,10 @@
 - 画像を1枚指定するだけで MP4 を生成
 - 動画長は `1〜600` 秒
 - Windows では `.exe` を配布して **Python なし** で実行可能
+- `ffmpeg` はアプリ内で自動解決されるため、別途インストール不要
 
 ## 前提
-- `ffmpeg` がインストールされ、PATH に通っていること
-  - もしくは `run_exe_no_python.bat` が自動ダウンロードするローカル ffmpeg を使用
+- 追加インストール不要（ダウンロード直後に実行可能）
 
 ## Python を使わずに実行する手順（Windows）
 1. `dist\image_to_video.exe` を配置（配布済みバイナリを使用）
@@ -19,10 +19,7 @@
 run_exe_no_python.bat --image input.jpg --output output.mp4 --duration 120
 ```
 
-このスクリプトは以下を行います。
-- `ffmpeg` が PATH にあればそれを使用
-- なければ `tools\ffmpeg` に自動ダウンロードして使用
-- `image_to_video.exe` を引数付きで実行
+このスクリプトは `image_to_video.exe` を引数付きで実行します。
 
 ## 使い方（Python実行・開発者向け）
 ```bash
@@ -46,7 +43,6 @@ dist\image_to_video.exe --image input.jpg --output output.mp4 --duration 300
 ```
 
 ## 注意
-- 本ツールはローカルの `ffmpeg` を呼び出します。
 - 600秒超はエラーになります。
 
 
