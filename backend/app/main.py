@@ -8,8 +8,11 @@ from botocore.client import Config
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from redis import Redis
 from rq import Queue
+from rq.retry import Retry
 
+from backend.models import JobStatus
 from common.config import (
+    JOB_MAX_TIMEOUT_SECONDS,
     MINIO_ACCESS_KEY,
     MINIO_BUCKET,
     MINIO_ENDPOINT,
@@ -81,7 +84,7 @@ def create_video_job(request: JobCreateRequest) -> JobCreateResponse:
         {
             "id": job_id,
             "type": "video",
-            "status": "queued",
+            "status": JobStatus.QUEUED,
             "progress": 0,
             "source_upload_job_id": request.upload_job_id,
             "source_object": source_job["source_object"],
@@ -99,9 +102,11 @@ def create_video_job(request: JobCreateRequest) -> JobCreateResponse:
         request.duration_seconds,
         request.style,
         request.bgm_enabled,
+        job_timeout=JOB_MAX_TIMEOUT_SECONDS,
+        retry=Retry(max=3, interval=[2, 4, 8]),
     )
 
-    return JobCreateResponse(job_id=job_id, status="queued")
+    return JobCreateResponse(job_id=job_id, status=JobStatus.QUEUED)
 
 
 @app.get("/jobs/{job_id}", response_model=JobStatusResponse)
@@ -110,11 +115,16 @@ def get_job_status(job_id: str) -> JobStatusResponse:
     if not job:
         raise HTTPException(status_code=404, detail="job not found")
 
+    retryable = job.get("retryable")
+    status_raw = job.get("status", JobStatus.FAILED)
+    status = JobStatus(status_raw) if status_raw in JobStatus._value2member_map_ else JobStatus.FAILED
     return JobStatusResponse(
         job_id=job_id,
-        status=job.get("status", "unknown"),
+        status=status,
         progress=int(job.get("progress", 0)),
-        error=job.get("error"),
+        error_code=job.get("error_code"),
+        error_message=job.get("error_message"),
+        retryable=(retryable.lower() == "true") if retryable is not None else None,
     )
 
 
@@ -123,12 +133,12 @@ def get_job_result(job_id: str) -> JobResultResponse:
     job = get_job(redis_client, job_id)
     if not job:
         raise HTTPException(status_code=404, detail="job not found")
-    if job.get("status") != "completed":
-        raise HTTPException(status_code=409, detail="job is not completed")
+    if job.get("status") != JobStatus.SUCCEEDED:
+        raise HTTPException(status_code=409, detail="job is not succeeded")
 
     result_object = job.get("result_object")
     if not result_object:
         raise HTTPException(status_code=500, detail="result not found")
 
     result_url = f"{PUBLIC_BASE_URL}/{MINIO_BUCKET}/{result_object}"
-    return JobResultResponse(job_id=job_id, status="completed", result_url=result_url)
+    return JobResultResponse(job_id=job_id, status=JobStatus.SUCCEEDED, result_url=result_url)

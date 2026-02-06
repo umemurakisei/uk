@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -8,15 +7,10 @@ import boto3
 from botocore.client import Config
 from redis import Redis
 
-from common.config import (
-    MINIO_ACCESS_KEY,
-    MINIO_BUCKET,
-    MINIO_ENDPOINT,
-    MINIO_SECRET_KEY,
-    REDIS_URL,
-)
+from backend.models import JobStatus
+from common.config import MINIO_ACCESS_KEY, MINIO_BUCKET, MINIO_ENDPOINT, MINIO_SECRET_KEY, REDIS_URL
 from common.job_store import update_job
-from worker.pipeline import generate_video_from_image
+from worker.pipeline import SegmentGenerationTimeoutError, generate_video_from_image
 
 redis_client = Redis.from_url(REDIS_URL)
 
@@ -30,6 +24,20 @@ s3_client = boto3.client(
 )
 
 
+def _build_error_payload(exc: Exception) -> dict[str, str | bool]:
+    if isinstance(exc, SegmentGenerationTimeoutError):
+        return {
+            "error_code": "SEGMENT_TIMEOUT",
+            "error_message": str(exc),
+            "retryable": True,
+        }
+    return {
+        "error_code": "VIDEO_GENERATION_FAILED",
+        "error_message": str(exc),
+        "retryable": False,
+    }
+
+
 def generate_video(
     job_id: str,
     source_object: str,
@@ -38,13 +46,10 @@ def generate_video(
     bgm_enabled: bool,
 ) -> None:
     try:
-        update_job(redis_client, job_id, status="processing", progress=10)
-        time.sleep(1)
-        update_job(redis_client, job_id, progress=40)
+        update_job(redis_client, job_id, status=JobStatus.RUNNING, progress=10)
 
         source = s3_client.get_object(Bucket=MINIO_BUCKET, Key=source_object)["Body"].read()
-        time.sleep(1)
-        update_job(redis_client, job_id, progress=70)
+        update_job(redis_client, job_id, progress=30)
 
         with TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
@@ -61,12 +66,30 @@ def generate_video(
                     "output_path": str(output_path),
                 }
             )
+            update_job(redis_client, job_id, progress=60)
             result_bytes = output_path.read_bytes()
 
         result_key = f"results/{job_id}.mp4"
         s3_client.put_object(Bucket=MINIO_BUCKET, Key=result_key, Body=result_bytes, ContentType="video/mp4")
 
-        update_job(redis_client, job_id, status="completed", progress=100, result_object=result_key)
+        update_job(redis_client, job_id, progress=90)
+        update_job(
+            redis_client,
+            job_id,
+            status=JobStatus.SUCCEEDED,
+            progress=100,
+            result_object=result_key,
+            error_code="",
+            error_message="",
+            retryable=False,
+        )
     except Exception as exc:
-        update_job(redis_client, job_id, status="failed", error=str(exc), progress=100)
+        error_payload = _build_error_payload(exc)
+        update_job(
+            redis_client,
+            job_id,
+            status=JobStatus.FAILED,
+            progress=100,
+            **error_payload,
+        )
         raise

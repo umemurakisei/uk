@@ -6,14 +6,30 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from common.config import SEGMENT_MAX_TIMEOUT_SECONDS
+
 MAX_DURATION_SECONDS = 600
 MIN_DURATION_SECONDS = 1
 SEGMENT_MIN_SECONDS = 20
 SEGMENT_MAX_SECONDS = 60
 
 
-def _run_command(command: list[str]) -> None:
-    subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+class SegmentGenerationTimeoutError(TimeoutError):
+    pass
+
+
+def _run_command(command: list[str], timeout_seconds: int | None = None) -> None:
+    try:
+        subprocess.run(
+            command,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise SegmentGenerationTimeoutError(f"Command timed out after {timeout_seconds}s: {' '.join(command)}") from exc
 
 
 def _probe_duration(video_path: Path) -> float:
@@ -111,7 +127,8 @@ def _render_segment(image_path: Path, segment_plan: dict[str, Any], segment_path
             "-pix_fmt",
             "yuv420p",
             str(segment_path),
-        ]
+        ],
+        timeout_seconds=SEGMENT_MAX_TIMEOUT_SECONDS,
     )
 
 
