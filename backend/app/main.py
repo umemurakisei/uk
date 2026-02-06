@@ -91,6 +91,7 @@ def create_video_job(request: JobCreateRequest) -> JobCreateResponse:
             "duration_seconds": request.duration_seconds,
             "style": request.style,
             "bgm_enabled": request.bgm_enabled,
+            "edit_instruction": request.edit_instruction,
             "created_at": datetime.now(timezone.utc).isoformat(),
         },
     )
@@ -102,6 +103,7 @@ def create_video_job(request: JobCreateRequest) -> JobCreateResponse:
         request.duration_seconds,
         request.style,
         request.bgm_enabled,
+        request.edit_instruction,
         job_timeout=JOB_MAX_TIMEOUT_SECONDS,
         retry=Retry(max=3, interval=[2, 4, 8]),
     )

@@ -8,6 +8,11 @@ class JobCreateRequest(BaseModel):
     duration_seconds: int = Field(..., ge=1, le=600)
     style: str = Field(..., min_length=1, max_length=64)
     bgm_enabled: bool = True
+    edit_instruction: str = Field(
+        default="",
+        max_length=500,
+        description="Natural-language instruction used to auto-select effects/transitions/telops/music",
+    )
 
 
 class JobCreateResponse(BaseModel):

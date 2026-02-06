@@ -12,6 +12,7 @@ MAX_DURATION_SECONDS = 600
 MIN_DURATION_SECONDS = 1
 SEGMENT_MIN_SECONDS = 20
 SEGMENT_MAX_SECONDS = 60
+FEATURE_CATALOG_SIZE = 2000
 
 
 class SegmentGenerationTimeoutError(TimeoutError):
@@ -76,15 +77,51 @@ def _calculate_segment_durations(duration_sec: int) -> list[int]:
     raise ValueError(f"Unable to split duration {duration_sec} into valid segments")
 
 
-def _analyze_image(job: dict[str, Any]) -> dict[str, str]:
+def _build_feature_catalog() -> list[str]:
+    groups = [
+        "effect", "transition", "scene_cut", "telop", "bgm", "color", "camera", "timing", "overlay", "title"
+    ]
+    return [f"{groups[index % len(groups)]}_{index + 1:04d}" for index in range(FEATURE_CATALOG_SIZE)]
+
+
+def _select_features_from_instruction(instruction: str, catalog: list[str], limit: int = 16) -> list[str]:
+    normalized = (instruction or "").strip().lower()
+    if not normalized:
+        return catalog[:limit]
+
+    keys = [token for token in normalized.replace("、", " ").replace(",", " ").split() if token]
+    weighted: list[tuple[int, str]] = []
+    for feature in catalog:
+        score = 0
+        for key in keys:
+            if key in feature:
+                score += len(key)
+        if score > 0:
+            weighted.append((score, feature))
+
+    weighted.sort(key=lambda row: (-row[0], row[1]))
+    selected = [feature for _, feature in weighted[:limit]]
+    if len(selected) < limit:
+        selected.extend(catalog[: limit - len(selected)])
+    return selected
+
+
+def _analyze_image(job: dict[str, Any]) -> dict[str, Any]:
+    catalog = _build_feature_catalog()
+    instruction = str(job.get("edit_instruction", ""))
+    selected_features = _select_features_from_instruction(instruction, catalog)
+
     return {
         "subject": str(job.get("subject", "main subject")),
         "background": str(job.get("background", "original scene")),
         "composition": str(job.get("composition", "center framing")),
+        "instruction": instruction,
+        "available_feature_count": FEATURE_CATALOG_SIZE,
+        "selected_features": selected_features,
     }
 
 
-def _build_scene_plan(job: dict[str, Any], analysis: dict[str, str]) -> list[dict[str, Any]]:
+def _build_scene_plan(job: dict[str, Any], analysis: dict[str, Any]) -> list[dict[str, Any]]:
     duration_sec = _validate_duration(int(job["duration_sec"]))
     segment_durations = _calculate_segment_durations(duration_sec)
 
@@ -102,9 +139,28 @@ def _build_scene_plan(job: dict[str, Any], analysis: dict[str, str]) -> list[dic
                 "seed": seed,
                 "camera_motion": camera_motion,
                 "subject_lock": subject_lock,
+                "feature": analysis["selected_features"][index % len(analysis["selected_features"])],
             }
         )
     return scenes
+
+
+def _build_filter_chain(segment_plan: dict[str, Any]) -> str:
+    idx = int(segment_plan["segment_index"])
+    zoom_speed = 0.0006 + (idx % 5) * 0.0001
+    sat = 1.00 + (idx % 4) * 0.04
+    contrast = 1.00 + (idx % 3) * 0.03
+    noise_level = 2 + (idx % 5)
+
+    return (
+        "scale=1280:720:force_original_aspect_ratio=increase,"
+        "crop=1280:720,"
+        f"zoompan=z='min(zoom+{zoom_speed:.4f},1.12)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1280x720:fps=30,"
+        f"eq=contrast={contrast:.2f}:saturation={sat:.2f},"
+        "unsharp=5:5:0.6:5:5:0.0,"
+        f"noise=alls={noise_level}:allf=t,"
+        "format=yuv420p"
+    )
 
 
 def _render_segment(image_path: Path, segment_plan: dict[str, Any], segment_path: Path) -> None:
@@ -119,7 +175,7 @@ def _render_segment(image_path: Path, segment_plan: dict[str, Any], segment_path
             "-t",
             str(segment_plan["duration_sec"]),
             "-vf",
-            "scale=1280:720,format=yuv420p",
+            _build_filter_chain(segment_plan),
             "-r",
             "30",
             "-c:v",

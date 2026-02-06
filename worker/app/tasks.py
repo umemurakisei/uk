@@ -44,6 +44,7 @@ def generate_video(
     duration_seconds: int,
     style: str,
     bgm_enabled: bool,
+    edit_instruction: str = "",
 ) -> None:
     try:
         update_job(redis_client, job_id, status=JobStatus.RUNNING, progress=10)
@@ -62,6 +63,7 @@ def generate_video(
                     "duration_sec": duration_seconds,
                     "style": style,
                     "bgm_enabled": bgm_enabled,
+                    "edit_instruction": edit_instruction,
                     "image_path": str(image_path),
                     "output_path": str(output_path),
                 }
